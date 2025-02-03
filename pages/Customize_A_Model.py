@@ -1,9 +1,15 @@
 import streamlit as st
 import ollama
-from pages.Run_A_Different_Model import unload_models
-from config import OLLAMA_CLIENT
+from config import OLLAMA_CLIENT, refresh_model_list, unload_models
+import time
 
 st.title("Create a Custom Model")
+
+models = refresh_model_list()
+
+# if models == []:
+#     with st.spinner("Loading llama3.2:1B..."):
+#         OLLAMA_CLIENT.pull("llama3.2:1B")
 st.write("Note: all fields except model name are optional")
 
 all_models = ["llama3.2:1B", "llama3.2:3B", "llama3.1:8B", "mistral:latest"]
@@ -24,7 +30,7 @@ fields = [
     ("Repeat Penalty:", "repeat_penalty", float, 0.1, 2.0, 0.1, 1.1, "Sets how strongly to penalize repetitions. (Default: 1.1)"),
     ("Temperature:", "temperature", float, 0.0, 2.0, 0.01, 0.5, "The temperature of the model. Increasing the temperature will make the model answer more creatively. (Default: 0.5)"),
     ("Seed:", "seed", int, 0, 10000, 1, 0, "Sets the random number seed to use for generation. Setting this to a specific number will make the model generate the same text for the same prompt. (Default: 0)"),
-    ("Number of Predictions:", "num_predict", int, -1, 10000, 1, 1024, "Maximum number of tokens to predict when generating text. (Default: 1024)"),
+    ("Number of Predictions:", "num_predict", int, -1, 10000, 1, 1024, "Maximum number of tokens to output when generating text. (Default: 1024)"),
     ("Top K:", "top_k", int, 1, 1000, 1, 40, "Reduces the probability of generating nonsense. A higher value (e.g. 100) will give more diverse answers, while a lower value (e.g. 10) will be more conservative. (Default: 40)"),
     ("Top P:", "top_p", float, 0.0, 1.0, 0.01, 0.9, "Works together with top-k. A higher value (e.g., 0.95) will lead to more diverse text, while a lower value (e.g., 0.5) will generate more focused and conservative text. (Default: 0.9)"),
     ("Min P:", "min_p", float, 0.0, 1.0, 0.01, 0.0, "Alternative to top_p, and aims to ensure a balance of quality and variety. (Default: 0.0)"),
@@ -58,23 +64,34 @@ for label, key, dtype, min_val, max_val, step, default, help_text in fields:
                 label_visibility="collapsed",
             )
 
+params = {}
+for _, key, _, _, _, _, _, _ in fields:
+    params['key'] = st.session_state.get(key)
+
 st.text_input("Set a system prompt", key="sys_prompt")
 st.text_input("Name your new model", key="model_name")
 
 create = st.button("Create and load custom model")
 
-if create and st.session_state.get('model_name', ''):
-    st.write("User Inputs:")
-    params = {}
-    for _, key, _, _, _, _, _, _ in fields:
-        st.write(f"{key}: {st.session_state.get(key)}")
-        params[key] = st.session_state.get(key)
+new_name = st.session_state.get('model_name')
+if create and new_name:
+    base_model = st.session_state.get('base_model')
+    print(base_model)
     # Create and load the custom model
-    unload_models()
-    OLLAMA_CLIENT.create( 
-        model=st.session_state.get('model_name'),
-        from_=st.session_state.get('selected_model'),
-        system=st.session_state.get('sys_prompt'),
-        parameters=params
-        )
-    st.write("Model created and loaded successfully.")
+    with st.spinner("Unloading previous model..."):
+        unload_models()
+    with st.spinner(f"Loading base model ({base_model})..."):
+        OLLAMA_CLIENT.pull(base_model)
+    with st.spinner(f"Creating new custom model {new_name}..."):
+        OLLAMA_CLIENT.create( 
+            model=new_name,
+            from_=base_model,
+            system=st.session_state.get('sys_prompt'),
+            parameters=params
+            )
+    with st.spinner(f"Unloading base model ({base_model})"):
+        time.sleep(0.5)
+        OLLAMA_CLIENT.delete(base_model)
+    # with st.spinner(f"Loading new model into memory..."):
+    #     OLLAMA_CLIENT.pull(new_name+':latest')
+    st.success("Model created and loaded successfully.")
