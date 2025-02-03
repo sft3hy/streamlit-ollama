@@ -3,13 +3,28 @@ import ollama
 from typing import Dict, Generator
 from config import OLLAMA_CLIENT, refresh_model_list, unload_models
 import time
+import re
+
+pattern = r"(\w+)=('.*?'|\S+)"
+
+
+def dictionarize(ollama_response: str):
+    # Find all matches
+    matches = re.findall(pattern, ollama_response)
+    # Convert to dictionary
+    parsed_dict = {key: value.strip("'") if value != 'None' else None for key, value in matches}
+    return parsed_dict
 
 
 def ollama_generator(model_name: str, messages: Dict) -> Generator:
    stream = OLLAMA_CLIENT.chat(
        model=model_name, messages=messages, stream=True)
    for chunk in stream:
+       ollama_response_dict = dictionarize(str(chunk))
        yield chunk['message']['content']
+       if ollama_response_dict['done_reason'] == 'stop':
+           t_per_s = round(int(ollama_response_dict['eval_count'])/int(ollama_response_dict['eval_duration'])*1000000000, 2)
+           st.caption(f"Output T/s: {t_per_s}")
 
 
 models = refresh_model_list()
